@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum UserRole {
+  CLIENT
+  PROVIDER
+}
+
+enum PriceType {
+  FIXED
+  HOURLY
+  ESTIMATE
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum AnalysisStatus {
+  ANALYZED
+  CONFIRMED
+  EXPIRED
+}
+
+model User {
+  id           String   @id @default(cuid()) @db.VarChar(30)
+  name         String   @db.VarChar(120)
+  email        String   @unique @db.VarChar(254)
+  phone        String   @db.VarChar(30)
+  passwordHash String   @db.VarChar(255)
+  role         UserRole
+  lat          Float?
+  lng          Float?
+  addressLabel String?  @db.VarChar(255)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  provider          Provider? @relation("ProviderAccount")
+  clientBookings    Booking[] @relation("ClientBookings")
+  clientReviews     Review[]  @relation("ClientReviews")
+  analyses          ProblemAnalysis[]
+
+  @@index([role])
+  @@index([lat, lng])
+}
+
+model Category {
+  id        String   @id @default(cuid()) @db.VarChar(30)
+  slug      String   @unique @db.VarChar(80)
+  name      String   @db.VarChar(100)
+  icon      String   @db.VarChar(60)
+  createdAt DateTime @default(now())
+
+  providers  ProviderCategory[]
+  services   Service[]
+}
+
+model Provider {
+  id              String   @id @default(cuid()) @db.VarChar(30)
+  userId          String   @unique @db.VarChar(30)
+  bio             String   @db.Text
+  experienceYears Int      @default(0)
+  radiusKm        Int      @default(20)
+  ratingAvg       Float    @default(0)
+  ratingCount     Int      @default(0)
+  jobsDone        Int      @default(0)
+  verified        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User              @relation("ProviderAccount", fields: [userId], references: [id], onDelete: Cascade)
+  categories    ProviderCategory[]
+  services      Service[]
+  portfolio     PortfolioItem[]
+  availability  Availability[]
+  bookings      Booking[]
+  reviews       Review[]
+
+  @@index([ratingAvg])
+  @@index([verified])
+}
+
+model ProviderCategory {
+  providerId String @db.VarChar(30)
+  categoryId String @db.VarChar(30)
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([providerId, categoryId])
+  @@index([categoryId])
+}
+
+model Service {
+  id           String    @id @default(cuid()) @db.VarChar(30)
+  providerId   String    @db.VarChar(30)
+  categoryId   String    @db.VarChar(30)
+  title        String    @db.VarChar(140)
+  description  String    @db.Text
+  price        Decimal   @db.Decimal(10, 3)
+  priceType    PriceType
+  durationMin  Int       @default(60)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  provider Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  category Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  bookings Booking[]
+
+  @@index([providerId, active])
+  @@index([categoryId])
+}
+
+model PortfolioItem {
+  id          String   @id @default(cuid()) @db.VarChar(30)
+  providerId  String   @db.VarChar(30)
+  title       String   @db.VarChar(140)
+  description String   @db.Text
+  createdAt   DateTime @default(now())
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+}
+
+model Availability {
+  id         String @id @default(cuid()) @db.VarChar(30)
+  providerId String @db.VarChar(30)
+  weekday    Int
+  startTime  String @db.VarChar(5)
+  endTime    String @db.VarChar(5)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, weekday, startTime])
+  @@index([providerId, weekday])
+}
+
+model Booking {
+  id             String        @id @default(cuid()) @db.VarChar(30)
+  clientId       String        @db.VarChar(30)
+  providerId     String        @db.VarChar(30)
+  serviceId      String        @db.VarChar(30)
+  startAt        DateTime
+  endAt          DateTime
+  address        String        @db.VarChar(255)
+  lat            Float
+  lng            Float
+  notes          String        @db.Text
+  problemSummary String        @db.VarChar(255)
+  price          Decimal       @db.Decimal(10, 3)
+  priceType      PriceType
+  status         BookingStatus @default(PENDING)
+  acceptedAt     DateTime?
+  rejectedAt     DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  cancelledAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  client   User     @relation("ClientBookings", fields: [clientId], references: [id], onDelete: Restrict)
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  review   Review?
+  analysisId       String?       @db.VarChar(30)
+  analysis         ProblemAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+
+  @@index([clientId, startAt])
+  @@index([providerId, status, startAt])
+  @@index([providerId, startAt, endAt])
+  @@index([serviceId])
+  @@index([analysisId])
+}
+
+model ProblemAnalysis {
+  id           String         @id @default(cuid()) @db.VarChar(30)
+  clientId     String         @db.VarChar(30)
+  status       AnalysisStatus @default(ANALYZED)
+  categorySlug String         @db.VarChar(80)
+  urgency      String         @db.VarChar(10)
+  summary      String         @db.VarChar(255)
+  messages     Json
+  confirmedAt  DateTime?
+  expiresAt    DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  client   User      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@index([clientId, status, createdAt])
+}
+
+model Review {
+  id         String   @id @default(cuid()) @db.VarChar(30)
+  bookingId  String   @unique @db.VarChar(30)
+  clientId   String   @db.VarChar(30)
+  providerId String   @db.VarChar(30)
+  rating     Int
+  comment    String   @db.Text
+  createdAt  DateTime @default(now())
+
+  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  client   User     @relation("ClientReviews", fields: [clientId], references: [id], onDelete: Restrict)
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, createdAt])
+}
